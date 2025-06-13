@@ -1,0 +1,525 @@
+<!DOCTYPE html>  <html lang="ar" dir="rtl">  
+<head>  
+    <meta charset="UTF-8">  
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">  
+    <title>محرر فيديو متكامل</title>  
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ffmpeg/0.12.7/ffmpeg.min.js"></script>  
+    <style>  
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }  
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }  
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }  
+        .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }  
+        .timeline { width: 100%; height: 100px; background: #333; position: relative; margin: 20px 0; overflow-x: auto; }  
+        .timeline-track { height: 30px; background: #555; margin: 5px 0; position: relative; }  
+        .video-clip { position: absolute; height: 25px; background: #4CAF50; top: 2.5px; border-radius: 3px; cursor: pointer; }  
+        .audio-clip { position: absolute; height: 25px; background: #2196F3; top: 2.5px; border-radius: 3px; cursor: pointer; }  
+        .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: red; z-index: 10; }  
+        input[type="file"] { margin: 5px; }  
+        button { padding: 8px 15px; margin: 5px; cursor: pointer; background: #007cba; color: white; border: none; border-radius: 3px; }  
+        button:hover { background: #005a8b; }  
+        .preview { text-align: center; margin: 20px 0; }  
+        #preview-video { max-width: 100%; height: 300px; background: black; }  
+        .progress { width: 100%; height: 20px; background: #ddd; border-radius: 10px; overflow: hidden; margin: 10px 0; }  
+        .progress-bar { height: 100%; background: #4CAF50; width: 0%; transition: width 0.3s; }  
+        .property-panel { background: #f9f9f9; padding: 15px; border-radius: 5px; }  
+        .slider-group { margin: 10px 0; }  
+        .slider-group label { display: inline-block; width: 100px; }  
+        .effects-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }  
+        .effect-card { padding: 10px; background: #f5f5f5; border-radius: 5px; text-align: center; }  
+        .status { padding: 10px; background: #e7f3ff; border-radius: 5px; margin: 10px 0; }  
+    </style>  
+</head>  
+<body>  
+    <div class="container">  
+        <h1>محرر فيديو متكامل</h1>  <!-- حالة التطبيق -->  
+    <div id="status" class="status">جاري تحميل FFmpeg...</div>  
+      
+    <!-- استيراد الملفات -->  
+    <div class="section">  
+        <h3>استيراد الملفات</h3>  
+        <div class="controls">  
+            <input type="file" id="video-input" accept="video/*" multiple>  
+            <input type="file" id="audio-input" accept="audio/*" multiple>  
+            <input type="file" id="image-input" accept="image/*" multiple>  
+            <button onclick="clearProject()">مشروع جديد</button>  
+        </div>  
+    </div>  
+
+    <!-- معاينة الفيديو -->  
+    <div class="section">  
+        <h3>المعاينة</h3>  
+        <div class="preview">  
+            <video id="preview-video" controls></video>  
+        </div>  
+        <div class="controls">  
+            <button onclick="playPreview()">تشغيل</button>  
+            <button onclick="pausePreview()">إيقاف</button>  
+            <button onclick="stopPreview()">توقف</button>  
+            <input type="range" id="seek-slider" min="0" max="100" value="0" style="width: 300px;">  
+            <span id="time-display">00:00 / 00:00</span>  
+        </div>  
+    </div>  
+
+    <!-- الجدول الزمني -->  
+    <div class="section">  
+        <h3>الجدول الزمني</h3>  
+        <div class="timeline" id="timeline">  
+            <div class="playhead" id="playhead"></div>  
+            <div class="timeline-track" id="video-track"></div>  
+            <div class="timeline-track" id="audio-track"></div>  
+        </div>  
+        <div class="controls">  
+            <button onclick="addVideoClip()">إضافة فيديو</button>  
+            <button onclick="addAudioClip()">إضافة صوت</button>  
+            <button onclick="splitClip()">تقسيم</button>  
+            <button onclick="deleteClip()">حذف</button>  
+        </div>  
+    </div>  
+
+    <!-- خصائص الكليب المحدد -->  
+    <div class="section">  
+        <h3>خصائص الكليب</h3>  
+        <div class="property-panel">  
+            <div class="slider-group">  
+                <label>البداية:</label>  
+                <input type="number" id="clip-start" step="0.1" min="0">  
+                <label>المدة:</label>  
+                <input type="number" id="clip-duration" step="0.1" min="0.1">  
+            </div>  
+            <div class="slider-group">  
+                <label>السرعة:</label>  
+                <input type="range" id="speed-slider" min="0.25" max="4" step="0.25" value="1">  
+                <span id="speed-value">1x</span>  
+            </div>  
+            <div class="slider-group">  
+                <label>مستوى الصوت:</label>  
+                <input type="range" id="volume-slider" min="0" max="200" value="100">  
+                <span id="volume-value">100%</span>  
+            </div>  
+            <div class="slider-group">  
+                <label>السكوت:</label>  
+                <input type="checkbox" id="mute-checkbox">  
+            </div>  
+        </div>  
+    </div>  
+
+    <!-- التأثيرات والفلاتر -->  
+    <div class="section">  
+        <h3>التأثيرات والفلاتر</h3>  
+        <div class="effects-panel">  
+            <div class="effect-card">  
+                <h4>السطوع</h4>  
+                <input type="range" id="brightness" min="-100" max="100" value="0">  
+                <span id="brightness-value">0</span>  
+            </div>  
+            <div class="effect-card">  
+                <h4>التباين</h4>  
+                <input type="range" id="contrast" min="0.5" max="2" step="0.1" value="1">  
+                <span id="contrast-value">1</span>  
+            </div>  
+            <div class="effect-card">  
+                <h4>التشبع</h4>  
+                <input type="range" id="saturation" min="0" max="2" step="0.1" value="1">  
+                <span id="saturation-value">1</span>  
+            </div>  
+            <div class="effect-card">  
+                <h4>الغموض</h4>  
+                <input type="range" id="blur" min="0" max="10" step="0.5" value="0">  
+                <span id="blur-value">0</span>  
+            </div>  
+        </div>  
+        <div class="controls">  
+            <button onclick="applyEffect()">تطبيق التأثير</button>  
+            <button onclick="resetEffects()">إعادة تعيين</button>  
+        </div>  
+    </div>  
+
+    <!-- الانتقالات -->  
+    <div class="section">  
+        <h3>الانتقالات</h3>  
+        <div class="controls">  
+            <select id="transition-type">  
+                <option value="fade">تلاشي</option>  
+                <option value="dissolve">ذوبان</option>  
+                <option value="slide">انزلاق</option>  
+                <option value="wipe">مسح</option>  
+            </select>  
+            <input type="number" id="transition-duration" placeholder="المدة (ثانية)" value="1" step="0.1" min="0.1">  
+            <button onclick="addTransition()">إضافة انتقال</button>  
+        </div>  
+    </div>  
+
+    <!-- النص والعناوين -->  
+    <div class="section">  
+        <h3>النص والعناوين</h3>  
+        <div class="controls">  
+            <input type="text" id="text-content" placeholder="النص المراد إضافته" style="width: 300px;">  
+            <select id="font-size">  
+                <option value="20">20px</option>  
+                <option value="30">30px</option>  
+                <option value="40" selected>40px</option>  
+                <option value="50">50px</option>  
+                <option value="60">60px</option>  
+            </select>  
+            <input type="color" id="text-color" value="#ffffff">  
+            <button onclick="addText()">إضافة نص</button>  
+        </div>  
+    </div>  
+
+    <!-- إعدادات التصدير -->  
+    <div class="section">  
+        <h3>إعدادات التصدير</h3>  
+        <div class="controls">  
+            <select id="export-quality">  
+                <option value="480p">480p</option>  
+                <option value="720p" selected>720p</option>  
+                <option value="1080p">1080p</option>  
+            </select>  
+            <select id="export-format">  
+                <option value="mp4" selected>MP4</option>  
+                <option value="webm">WebM</option>  
+                <option value="avi">AVI</option>  
+            </select>  
+            <button onclick="exportVideo()" id="export-btn">تصدير الفيديو</button>  
+        </div>  
+    </div>  
+
+    <!-- شريط التقدم -->  
+    <div class="progress" id="progress-container" style="display: none;">  
+        <div class="progress-bar" id="progress-bar"></div>  
+    </div>  
+</div>  
+
+<script>  
+    // المتغيرات العامة  
+    let ffmpeg = null;  
+    let isFFmpegLoaded = false;  
+    let project = {  
+        videoClips: [],  
+        audioClips: [],  
+        imageClips: [],  
+        effects: [],  
+        transitions: [],  
+        texts: []  
+    };  
+    let selectedClip = null;  
+    let currentTime = 0;  
+    let totalDuration = 0;  
+    let timeline = document.getElementById('timeline');  
+    let playhead = document.getElementById('playhead');  
+    let previewVideo = document.getElementById('preview-video');  
+
+    // تحميل FFmpeg  
+    async function loadFFmpeg() {  
+        try {  
+            const { createFFmpeg, fetchFile } = FFmpeg;  
+            ffmpeg = createFFmpeg({  
+                log: true,  
+                corePath: 'https://cdnjs.cloudflare.com/ajax/libs/ffmpeg/0.12.7/ffmpeg-core.js'  
+            });  
+              
+            await ffmpeg.load();  
+            isFFmpegLoaded = true;  
+            updateStatus('FFmpeg محمل وجاهز للاستخدام');  
+        } catch (error) {  
+            updateStatus('خطأ في تحميل FFmpeg: ' + error.message);  
+            console.error('FFmpeg loading error:', error);  
+        }  
+    }  
+
+    // تحديث حالة التطبيق  
+    function updateStatus(message) {  
+        document.getElementById('status').textContent = message;  
+    }  
+
+    // تحديث شريط التقدم  
+    function updateProgress(percent) {  
+        const progressContainer = document.getElementById('progress-container');  
+        const progressBar = document.getElementById('progress-bar');  
+          
+        if (percent > 0) {  
+            progressContainer.style.display = 'block';  
+            progressBar.style.width = percent + '%';  
+        } else {  
+            progressContainer.style.display = 'none';  
+        }  
+    }  
+
+    // معالجة استيراد الملفات  
+    document.getElementById('video-input').addEventListener('change', function(e) {  
+        Array.from(e.target.files).forEach(file => {  
+            const clip = {  
+                id: Date.now() + Math.random(),  
+                file: file,  
+                name: file.name,  
+                type: 'video',  
+                start: 0,  
+                duration: 0,  
+                speed: 1,  
+                volume: 100,  
+                muted: false,  
+                effects: {}  
+            };  
+            project.videoClips.push(clip);  
+            addClipToTimeline(clip, 'video-track');  
+        });  
+    });  
+
+    document.getElementById('audio-input').addEventListener('change', function(e) {  
+        Array.from(e.target.files).forEach(file => {  
+            const clip = {  
+                id: Date.now() + Math.random(),  
+                file: file,  
+                name: file.name,  
+                type: 'audio',  
+                start: 0,  
+                duration: 0,  
+                speed: 1,  
+                volume: 100,  
+                muted: false  
+            };  
+            project.audioClips.push(clip);  
+            addClipToTimeline(clip, 'audio-track');  
+        });  
+    });  
+
+    // إضافة كليب للجدول الزمني  
+    function addClipToTimeline(clip, trackId) {  
+        const track = document.getElementById(trackId);  
+        const clipElement = document.createElement('div');  
+        clipElement.className = clip.type === 'video' ? 'video-clip' : 'audio-clip';  
+        clipElement.style.left = clip.start * 10 + 'px';  
+        clipElement.style.width = '100px'; // عرض افتراضي  
+        clipElement.textContent = clip.name;  
+        clipElement.onclick = () => selectClip(clip);  
+        clipElement.setAttribute('data-clip-id', clip.id);  
+        track.appendChild(clipElement);  
+    }  
+
+    // تحديد كليب  
+    function selectClip(clip) {  
+        selectedClip = clip;  
+        updatePropertyPanel();  
+          
+        // إزالة التحديد من جميع الكليبات  
+        document.querySelectorAll('.video-clip, .audio-clip').forEach(el => {  
+            el.style.border = 'none';  
+        });  
+          
+        // تمييز الكليب المحدد  
+        const clipElement = document.querySelector(`[data-clip-id="${clip.id}"]`);  
+        if (clipElement) {  
+            clipElement.style.border = '2px solid yellow';  
+        }  
+    }  
+
+    // تحديث لوحة الخصائص  
+    function updatePropertyPanel() {  
+        if (!selectedClip) return;  
+          
+        document.getElementById('clip-start').value = selectedClip.start;  
+        document.getElementById('clip-duration').value = selectedClip.duration;  
+        document.getElementById('speed-slider').value = selectedClip.speed;  
+        document.getElementById('speed-value').textContent = selectedClip.speed + 'x';  
+        document.getElementById('volume-slider').value = selectedClip.volume;  
+        document.getElementById('volume-value').textContent = selectedClip.volume + '%';  
+        document.getElementById('mute-checkbox').checked = selectedClip.muted;  
+    }  
+
+    // تشغيل المعاينة  
+    function playPreview() {  
+        if (previewVideo.src) {  
+            previewVideo.play();  
+        }  
+    }  
+
+    function pausePreview() {  
+        previewVideo.pause();  
+    }  
+
+    function stopPreview() {  
+        previewVideo.pause();  
+        previewVideo.currentTime = 0;  
+    }  
+
+    // إضافة تأثير  
+    function applyEffect() {  
+        if (!selectedClip) {  
+            alert('يرجى تحديد كليب أولاً');  
+            return;  
+        }  
+          
+        selectedClip.effects = {  
+            brightness: document.getElementById('brightness').value,  
+            contrast: document.getElementById('contrast').value,  
+            saturation: document.getElementById('saturation').value,  
+            blur: document.getElementById('blur').value  
+        };  
+          
+        updateStatus('تم تطبيق التأثير على الكليب المحدد');  
+    }  
+
+    // إعادة تعيين التأثيرات  
+    function resetEffects() {  
+        document.getElementById('brightness').value = 0;  
+        document.getElementById('contrast').value = 1;  
+        document.getElementById('saturation').value = 1;  
+        document.getElementById('blur').value = 0;  
+          
+        document.getElementById('brightness-value').textContent = '0';  
+        document.getElementById('contrast-value').textContent = '1';  
+        document.getElementById('saturation-value').textContent = '1';  
+        document.getElementById('blur-value').textContent = '0';  
+    }  
+
+    // إضافة انتقال  
+    function addTransition() {  
+        const transition = {  
+            type: document.getElementById('transition-type').value,  
+            duration: parseFloat(document.getElementById('transition-duration').value)  
+        };  
+        project.transitions.push(transition);  
+        updateStatus('تم إضافة انتقال: ' + transition.type);  
+    }  
+
+    // إضافة نص  
+    function addText() {  
+        const textContent = document.getElementById('text-content').value;  
+        if (!textContent) {  
+            alert('يرجى إدخال النص');  
+            return;  
+        }  
+          
+        const textClip = {  
+            id: Date.now() + Math.random(),  
+            content: textContent,  
+            fontSize: document.getElementById('font-size').value,  
+            color: document.getElementById('text-color').value,  
+            start: currentTime,  
+            duration: 3  
+        };  
+          
+        project.texts.push(textClip);  
+        updateStatus('تم إضافة النص: ' + textContent);  
+    }  
+
+    // تصدير الفيديو  
+    async function exportVideo() {  
+        if (!isFFmpegLoaded) {  
+            alert('FFmpeg غير محمل بعد');  
+            return;  
+        }  
+          
+        if (project.videoClips.length === 0) {  
+            alert('لا توجد ملفات فيديو للتصدير');  
+            return;  
+        }  
+          
+        updateStatus('جاري تصدير الفيديو...');  
+        updateProgress(10);  
+          
+        try {  
+            // هذا مثال مبسط للتصدير  
+            const firstVideo = project.videoClips[0];  
+            const { fetchFile } = FFmpeg;  
+              
+            // تحميل الملف الأول  
+            await ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(firstVideo.file));  
+            updateProgress(30);  
+              
+            // تطبيق التأثيرات الأساسية  
+            let filterComplex = '';  
+            if (firstVideo.effects) {  
+                if (firstVideo.effects.brightness != 0) {  
+                    filterComplex += `eq=brightness=${firstVideo.effects.brightness/100}:`;  
+                }  
+                if (firstVideo.effects.contrast != 1) {  
+                    filterComplex += `contrast=${firstVideo.effects.contrast}:`;  
+                }  
+            }  
+              
+            updateProgress(50);  
+              
+            // تشغيل FFmpeg  
+            const quality = document.getElementById('export-quality').value;  
+            const format = document.getElementById('export-format').value;  
+              
+            let height = '720';  
+            if (quality === '480p') height = '480';  
+            else if (quality === '1080p') height = '1080';  
+              
+            await ffmpeg.run('-i', 'input.mp4', '-vf', `scale=-1:${height}`, '-c:v', 'libx264', '-preset', 'fast', `output.${format}`);  
+            updateProgress(80);  
+              
+            // تحميل الملف النهائي  
+            const data = ffmpeg.FS('readFile', `output.${format}`);  
+            const url = URL.createObjectURL(new Blob([data.buffer], { type: `video/${format}` }));  
+              
+            // إنشاء رابط التحميل  
+            const a = document.createElement('a');  
+            a.href = url;  
+            a.download = `exported_video.${format}`;  
+            a.click();  
+              
+            updateProgress(100);  
+            updateStatus('تم تصدير الفيديو بنجاح');  
+              
+            setTimeout(() => updateProgress(0), 2000);  
+              
+        } catch (error) {  
+            updateStatus('خطأ في التصدير: ' + error.message);  
+            updateProgress(0);  
+            console.error('Export error:', error);  
+        }  
+    }  
+
+    // مسح المشروع  
+    function clearProject() {  
+        project = {  
+            videoClips: [],  
+            audioClips: [],  
+            imageClips: [],  
+            effects: [],  
+            transitions: [],  
+            texts: []  
+        };  
+          
+        document.getElementById('video-track').innerHTML = '';  
+        document.getElementById('audio-track').innerHTML = '';  
+        selectedClip = null;  
+        updateStatus('تم إنشاء مشروع جديد');  
+    }  
+
+    // مراقبة التغييرات في السلايدرز  
+    document.getElementById('speed-slider').addEventListener('input', function() {  
+        document.getElementById('speed-value').textContent = this.value + 'x';  
+        if (selectedClip) selectedClip.speed = parseFloat(this.value);  
+    });  
+
+    document.getElementById('volume-slider').addEventListener('input', function() {  
+        document.getElementById('volume-value').textContent = this.value + '%';  
+        if (selectedClip) selectedClip.volume = parseInt(this.value);  
+    });  
+
+    document.getElementById('brightness').addEventListener('input', function() {  
+        document.getElementById('brightness-value').textContent = this.value;  
+    });  
+
+    document.getElementById('contrast').addEventListener('input', function() {  
+        document.getElementById('contrast-value').textContent = this.value;  
+    });  
+
+    document.getElementById('saturation').addEventListener('input', function() {  
+        document.getElementById('saturation-value').textContent = this.value;  
+    });  
+
+    document.getElementById('blur').addEventListener('input', function() {  
+        document.getElementById('blur-value').textContent = this.value;  
+    });  
+
+    // تحميل FFmpeg عند تحميل الصفحة  
+    window.addEventListener('load', loadFFmpeg);  
+</script>
+
+</body>  
+</html>
